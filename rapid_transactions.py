@@ -5,10 +5,22 @@ from bitcoinutils.script import Script
 from helper import Id
 from typing import List
 
-# tx_state lock script encodes possibilities to either refund to left or pay to right
+
 def getTxStateLockScript(T: int, delta: int, pubkey_pay_right: PublicKey,
                   pubkey_refund_mulsig_left: PublicKey, pubkey_refund_mulsig_right: PublicKey,
                   pubkey_pay_mulsig_left: PublicKey, pubkey_pay_mulsig_right: PublicKey) -> Script:
+    """
+    tx_state lock script encodes possibilities to either refund locked coins to left or pay to right
+
+    :param T: locked funds can pe paid after this time wherever right user wants
+    :param delta: upper bound on time for transaction to be confirmed by the network
+    :param pubkey_pay_right: public key owned by right user for payment after time T
+    :param pubkey_refund_mulsig_left: public key owned by left user for refund if enable-refund tx is published
+    :param pubkey_refund_mulsig_right: public key owned by right user for refund if enable-refund tx is published
+    :param pubkey_pay_mulsig_left: public key owned by left user for payment if enable-payment tx is published
+    :param pubkey_pay_mulsig_right: public key owned by right user for payment if enable-payment tx is published
+    :return: tx_state lock script
+    """
 
     # signature script:
     # - for refund (with enable-refund tx + 2∆): "OP_0 <left_signature> <right_signature>"
@@ -31,12 +43,32 @@ def getTxStateLockScript(T: int, delta: int, pubkey_pay_right: PublicKey,
     return lock_script
 
 
-# move coins from left balance to new "lock" output
 def createTxState(tx_in: TxInput, pubkey_left: PublicKey, pubkey_right: PublicKey,
-                  pubkey_pay_right: PublicKey,  # pay after T wherever right in channel want
-                  pubkey_refund_mulsig_left: PublicKey, pubkey_refund_mulsig_right: PublicKey, # mulsig for refund
-                  pubkey_pay_mulsig_left: PublicKey, pubkey_pay_mulsig_right: PublicKey,  # mulsig for inst pay
+                  pubkey_pay_right: PublicKey,
+                  pubkey_refund_mulsig_left: PublicKey, pubkey_refund_mulsig_right: PublicKey,
+                  pubkey_pay_mulsig_left: PublicKey, pubkey_pay_mulsig_right: PublicKey,
                   lock_val: float, left_val: float, right_val: float, T: int, delta: int) -> Transaction:
+
+    """
+    Move coins from left user balance to a new "lock" output.
+    Before: 'a' coins to L, 'b' coins to R.
+    After: 'a - c' coins to L, 'b' coins to R, 'c' coins locked.
+
+    :param tx_in: reference to channel open transaction
+    :param pubkey_left: public key owned by left user to receive his coins from channel
+    :param pubkey_right: public key owned by right user to receive his coins from channel
+    :param pubkey_pay_right: public key owned by right user for payment after time T
+    :param pubkey_refund_mulsig_left: public key owned by left user for refund if enable-refund tx is published
+    :param pubkey_refund_mulsig_right: public key owned by right user for refund if enable-refund tx is published
+    :param pubkey_pay_mulsig_left: public key owned by left user for payment if enable-payment tx is published
+    :param pubkey_pay_mulsig_right: public key owned by right user for payment if enable-payment tx is published
+    :param lock_val: amount of coins to lock: 'c'
+    :param left_val: coins or left user: 'a - c'
+    :param right_val: coins or right user: 'b'
+    :param T: locked funds can pe paid after this time wherever right user wants
+    :param delta: upper bound on time for transaction to be confirmed by the network
+    :return: tx_state
+    """
 
     out_lock_script = getTxStateLockScript(T, delta, pubkey_pay_right, pubkey_refund_mulsig_left, pubkey_refund_mulsig_right, pubkey_pay_mulsig_left, pubkey_pay_mulsig_right)
 
@@ -49,25 +81,31 @@ def createTxState(tx_in: TxInput, pubkey_left: PublicKey, pubkey_right: PublicKe
     return tx
 
 
-# funding transaction for enable-refund or enable-payment transactions.
-def createTxInForEnableTx(tx_in: TxInput, id_sender: Id, id_receiver: Id, amount: float) -> Transaction:
-    tx_out = TxOutput(amount, id_receiver.p2pkh)
-    tx_er_in = Transaction([tx_in], [tx_out])
-
-    sig_sender = id_sender.private_key.sign_input(tx_er_in, 0, id_sender.p2pkh)
-    tx_in.script_sig = Script([sig_sender, id_sender.public_key.to_hex()])
-
-    return tx_er_in
-
-
 def getEnableTxOutputLockScript(pubkey: PublicKey, rel_timelock: int) -> Script:
+    """
+    Create lock script for output of enable-(payment/refund) transaction
+
+    :param pubkey: public key owned by corresponding payment participant
+    :param rel_timelock: relative lock on outputs. Should be same for all outputs of transaction
+    :return: lock script
+    """
+
     seq = Sequence(TYPE_RELATIVE_TIMELOCK, rel_timelock)
     return Script([seq.for_script(), 'OP_CHECKSEQUENCEVERIFY', 'OP_DROP', 'OP_DUP', 'OP_HASH160', pubkey.to_hash160(), 'OP_EQUALVERIFY', 'OP_CHECKSIG'])
 
 
-# enable-refund and enable-payment transactions are constructed in the same way.
-# Transaction has <n> outputs with value <eps>, owned by payment participants
 def createEnableTx(tx_in: TxInput, public_keys: List[PublicKey], rel_timelock, eps: float = 1) -> Transaction:
+    """
+    Enable-refund and enable-payment transactions are constructed in the same way.
+    Transaction has <n> outputs with value <eps>, owned by payment participants
+
+    :param tx_in: funding transaction
+    :param public_keys: keys owned by payment participants
+    :param rel_timelock: relative lock on outputs
+    :param eps: value for each output
+    :return: enable transaction
+    """
+
     out_list = []
     for pubkey in public_keys:
         out_list.append(TxOutput(eps, getEnableTxOutputLockScript(pubkey, rel_timelock)))
@@ -76,17 +114,39 @@ def createEnableTx(tx_in: TxInput, public_keys: List[PublicKey], rel_timelock, e
     return tx_er
 
 
-# before the payment, users share unsigned version of enable-(payment/refund) transaction.
-# if user wants to publish it then he signs it
 def signEnableTx(tx_enable: Transaction, tx_in_owner: Id) -> Transaction:
+    """
+    Before the payment, users share unsigned version of enable-(payment/refund) transaction.
+    If user wants to publish it then he signs it
+
+    :param tx_enable: enable-(payment/refund) transaction to sign
+    :param tx_in_owner: id that owns funding tx of this enable tx
+    :return: signed enable transaction
+    """
+
     sig_sender = tx_in_owner.private_key.sign_input(tx_enable, 0, tx_in_owner.p2pkh)
     tx_enable.inputs[0].script_sig = Script([sig_sender, tx_in_owner.public_key.to_hex()])
     return tx_enable
 
 
-# left creates tx_refund based on tx_state and tx_er, and signs it
 def createTxRefund(tx_er_input: TxInput, tx_state_input: TxInput, id_er: Id, id_state_ref_left: Id, tx_state_lock_script: Script,
                    id_refund: Id, lock_coins: float, fee: float, eps: float, rel_lock: int) -> (Transaction, str):
+    """
+    Left user creates transaction for refund based on tx_state and tx_er, and signs it
+
+    :param tx_er_input: enable-refund transaction output reference
+    :param tx_state_input: tx_state locked output reference
+    :param id_er: id that owns output of enable-refund transaction
+    :param id_state_ref_left: id for signing spend of tx_state.out_lock by left user
+    :param tx_state_lock_script: lock script of tx_state.out_lock (for creating a signature)
+    :param id_refund: id that will own coins if transaction will be published
+    :param lock_coins: coins locked in tx_state
+    :param fee: coins paid to miners
+    :param eps: coins from enable-refund transaction
+    :param rel_lock: relative lock on tx_er_input (for creating a signature)
+    :return: tx_refund, signed by left user
+    """
+
     out_refund = TxOutput(lock_coins + eps - fee, id_refund.p2pkh)
 
     tx_refund = Transaction([tx_er_input, tx_state_input], [out_refund])
@@ -101,22 +161,50 @@ def createTxRefund(tx_er_input: TxInput, tx_state_input: TxInput, id_er: Id, id_
     return tx_refund, sig_state_left
 
 
-# right signs tx_refund ans send signature back to left
 def txRefundGetRightSignature(tx_refund: Transaction, id_state_ref_right: Id, tx_state_lock_script: Script) -> str:
-    # signed 2/2 multisig by second party
+    """
+    Right user signs tx_refund ans send signature back to left
+
+    :param tx_refund: refund transaction
+    :param id_state_ref_right: id for signing spend of tx_state.out_lock by right user
+    :param tx_state_lock_script: lock script of tx_state.out_lock (for creating a signature)
+    :return: signature of tx_refund by right user
+    """
+
     return id_state_ref_right.private_key.sign_input(tx_refund, 1, tx_state_lock_script)
 
 
-# when left receives signature for tx_refund from right, he also creates ScriptSig for it
 def signTxRefundStateInput(tx_refund: Transaction, sig_left: str, sig_right: str) -> Transaction:
+    """
+    When left user receives signature for tx_refund from right user, he also creates ScriptSig for it
+
+    :param tx_refund: refund transaction
+    :param sig_left: signature of left user
+    :param sig_right: signature of right user
+    :return:
+    """
+
     tx_refund.inputs[1].script_sig = Script(['OP_0', sig_left, sig_right])
     return tx_refund
 
 
-# left creates tx_inst_pay and signature for tx_state which funds this tx_inst_pay
 def createTxInstPay(tx_ep_input: TxInput, tx_state_input: TxInput, id_state_inst_pay_left: Id, tx_state_lock_script: Script,
-                    id_inst_pay: Id, lock_coins: float, fee: float, eps: float) -> (Transaction, str):
-    out_inst_pay = TxOutput(lock_coins + eps - fee, id_inst_pay.p2pkh)
+                    inst_pay_lock_script: Script, lock_coins: float, fee: float, eps: float) -> (Transaction, str):
+    """
+    Left user creates tx_inst_pay and signature for tx_state which funds this tx_inst_pay
+
+    :param tx_ep_input: enable-payment transaction output reference
+    :param tx_state_input: tx_state locked output reference
+    :param id_state_inst_pay_left: id for signing spend of tx_state.out_lock by left user
+    :param tx_state_lock_script: lock script of tx_state.out_lock (for creating a signature)
+    :param inst_pay_lock_script: ScriptPubKey for new transactio, for example, p2pkh (to right user pubkey hash)
+    :param lock_coins: coins locked in tx_state
+    :param fee: coins paid to miners
+    :param eps: coins from enable-refund transaction
+    :return: tx for instant payment and signature of left user for it
+    """
+
+    out_inst_pay = TxOutput(lock_coins + eps - fee, inst_pay_lock_script)
 
     tx_inst_pay = Transaction([tx_ep_input, tx_state_input], [out_inst_pay])
 
@@ -126,10 +214,20 @@ def createTxInstPay(tx_ep_input: TxInput, tx_state_input: TxInput, id_state_inst
     return tx_inst_pay, sig_state_left
 
 
-# left sends unsigned tx_inst_pay to right along with his signature for tx_state. 
-# Now right can completely sign it and publish
 def signTxInstPayStateInput(tx_inst_pay: Transaction, sig_tx_state_left: str, id_ep_owner: Id,
                             id_state_inst_pay_right: Id, tx_state_lock_script: Script, rel_lock: int) -> Transaction:
+    """
+    Left user sends unsigned tx_inst_pay to right along with his signature for tx_state.
+    Now right user can completely sign it and publish
+
+    :param tx_inst_pay: tx for instant payment (created by left user)
+    :param sig_tx_state_left: signature by left user for spending tx_spend.out_lock in this transaction
+    :param id_ep_owner: id for signing spend of one of enable-payment tx outputs
+    :param id_state_inst_pay_right: id for signing spend of tx_state.out_lock by right user
+    :param tx_state_lock_script: lock script of tx_state.out_lock (for creating a signature)
+    :param rel_lock: relative lock on tx_ep_input (for creating a signature)
+    :return: signed transaction for instant payment if enable-payment transaction is published
+    """
 
     ep_in_lock_script = getEnableTxOutputLockScript(id_ep_owner.public_key, rel_lock)
     sig_ep = id_ep_owner.private_key.sign_input(tx_inst_pay, 0, ep_in_lock_script)
@@ -141,9 +239,19 @@ def signTxInstPayStateInput(tx_inst_pay: Transaction, sig_tx_state_left: str, id
     return tx_inst_pay
 
 
-# right can spend locked coins after time T wherever he wants
 def createTxPayAndSign(tx_state_input: TxInput, id_state_pay_right: Id, tx_state_lock_script: Script,
                     id_pay_receiver: Id, lock_coins: float, fee: float) -> Transaction:
+    """
+    Right can spend locked coins after time T wherever he wants
+
+    :param tx_state_input: tx_state locked output reference
+    :param id_state_pay_right: id for signing spend of tx_state.out_lock by right user
+    :param tx_state_lock_script: lock script of tx_state.out_lock (for creating a signature)
+    :param id_pay_receiver: id that will own coins if transaction will be published
+    :param lock_coins: coins locked in tx_state
+    :param fee: coins paid to miners
+    :return: transaction for pay to right user, valid after time T
+    """
 
     out_pay = TxOutput(lock_coins - fee, id_pay_receiver.p2pkh)
     tx_pay = Transaction([tx_state_input], [out_pay])

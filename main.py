@@ -119,7 +119,7 @@ def main():
     # 197 bytes
 
     tx_inst_pay, sig_state_left = createTxInstPay(tx_ep_for_refund_input, tx_state_lock_input, id_pay_mulsig_left, state_lock_script,
-                                  id_inst_pay_receiver, lock_amount, to_satoshis(0.00000600), eps)
+                                  id_inst_pay_receiver.p2pkh, lock_amount, to_satoshis(0.00000600), eps)
     tx_inst_pay = signTxInstPayStateInput(tx_inst_pay, sig_state_left, id_ep_u1, id_pay_mulsig_right, state_lock_script, tx_ep_rel_timelock)
     print_tx(tx_inst_pay, 'tx inst pay')
     # 380 bytes
