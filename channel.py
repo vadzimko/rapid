@@ -47,7 +47,8 @@ def signChannelStateTx(tx: Transaction, signature_left: str, signature_right: st
     return tx
 
 
-def main():
+def testChannel():
+    setup.setup('testnet')
     id_left = Id('1aa60d2b1563c43e27531dd8392cfee695f733f1509ee80980948f09c6a6c59b')
     id_right = Id('a9de61e5047946133821216d7f5149f5d9c04326ce73a915cb2d6d678686f6b3')
     tx_input_left = TxInput('98ebd3a3455cc907f29919713fa1799a2d9d60168f5fb1ae94074b1a8078100e', 8)
@@ -59,12 +60,6 @@ def main():
     channel_tx = createOpenChannelTx(tx_input_left, tx_input_right, 1900, 1900, id_left.public_key, id_right.public_key)
     print_tx(channel_tx, 'chan')
     channel_tx = signOpenChannelTxLeft(channel_tx, id_left)
-    print_tx(channel_tx, 'chan 2')
+    print_tx(channel_tx, 'chan 1 sig')
     channel_tx = signOpenChannelTxRight(channel_tx, id_right)
-    print_tx(channel_tx, 'chan 3')
-
-
-if __name__ == '__main__':
-    setup.setup('testnet')
-    main()
-
+    print_tx(channel_tx, 'chan 2 sig')

@@ -26,7 +26,7 @@ def main():
     tx_channel = signOpenChannelTxLeft(tx_channel, id_in_channel_left)
     tx_channel = signOpenChannelTxRight(tx_channel, id_in_channel_right)
     print_tx(tx_channel, 'tx channel open')
-    # publish tx_channel -> https://live.blockcypher.com/btc-testnet/tx/7b2ff59b6070a70249fd3f06efd1e0944d69597e5871e72098304adae94e7316/
+    # publish tx_channel -> https://blockstream.info/testnet/tx/7b2ff59b6070a70249fd3f06efd1e0944d69597e5871e72098304adae94e7316/
     tx_channel_id = '7b2ff59b6070a70249fd3f06efd1e0944d69597e5871e72098304adae94e7316'
 
     id_ep_in = Id('f2b019b04121adca7b6541a08761454b14ffd705248a51e7f3b6cfbf64f2b26b')
@@ -46,26 +46,26 @@ def main():
     tx_ep_rel_timelock = t_channel
 
     tx_er = createEnableTx(tx_er_input, [id_er_u1.public_key], tx_er_rel_timelock, eps)
-    tx_er_input.script_sig = Script([id_er_in.private_key.sign_input(tx_er, 0, id_er_in.p2pkh), id_er_in.public_key.to_hex()])
+    signEnableTx(tx_er, id_er_in)
     print_tx(tx_er, 'tx_er, 1 out')
     # 195 bytes
     tx_er = createEnableTx(tx_er_input, [id_er_u1.public_key, id_er_u2.public_key], tx_er_rel_timelock, eps)
-    tx_er_input.script_sig = Script([id_er_in.private_key.sign_input(tx_er, 0, id_er_in.p2pkh), id_er_in.public_key.to_hex()])
+    signEnableTx(tx_er, id_er_in)
     print_tx(tx_er, 'tx_er, 2 out')
     # 233 bytes
     tx_er = createEnableTx(tx_er_input, [id_er_u1.public_key, id_er_u2.public_key, id_er_u3.public_key], tx_er_rel_timelock, eps)
-    tx_er_input.script_sig = Script([id_er_in.private_key.sign_input(tx_er, 0, id_er_in.p2pkh), id_er_in.public_key.to_hex()])
+    signEnableTx(tx_er, id_er_in)
     print_tx(tx_er, 'tx_er, 3 out')
     # 271 bytes. enable-refund tx size in bytes = 157 + 38 * outs_number
 
     tx_ep = createEnableTx(tx_ep_input, [id_ep_u1.public_key, id_ep_u2.public_key, id_ep_u3.public_key], tx_ep_rel_timelock, eps)
-    tx_ep_input.script_sig = Script([id_ep_in.private_key.sign_input(tx_ep, 0, id_ep_in.p2pkh), id_ep_in.public_key.to_hex()])
+    signEnableTx(tx_ep, id_ep_in)
     print_tx(tx_ep, 'tx_ep, 3 out')
     # same as enable-refund
 
-    # publish tx_er -> https://live.blockcypher.com/btc-testnet/tx/1e3c3465793126d4115f49750fab61a66c20bfbece436016d00066730704969b/
+    # publish tx_er -> https://blockstream.info/testnet/tx/1e3c3465793126d4115f49750fab61a66c20bfbece436016d00066730704969b/
     tx_er_id = '1e3c3465793126d4115f49750fab61a66c20bfbece436016d00066730704969b'
-    # publish tx_ep -> https://live.blockcypher.com/btc-testnet/tx/19c04e7bb09cbbd6f18ed4bff18a6c0d7491ddf5119ff1e70b2cfdbc4455612c/
+    # publish tx_ep -> https://blockstream.info/testnet/tx/19c04e7bb09cbbd6f18ed4bff18a6c0d7491ddf5119ff1e70b2cfdbc4455612c/
     tx_ep_id = '19c04e7bb09cbbd6f18ed4bff18a6c0d7491ddf5119ff1e70b2cfdbc4455612c'
 
     id_state_left = Id('ce7bca0ec8d38f945390e64627f4b669eca9afd2bae77d036421ce96b6767728')  # left can receive a - c coins
@@ -92,37 +92,37 @@ def main():
     tx_state = signChannelStateTx(tx_state, sig_tx_state_left, sig_tx_state_right)
     print_tx(tx_state, 'tx state')
     # 457 bytes
-    # publish tx_state -> https://live.blockcypher.com/btc-testnet/tx/229caba8498d320c60b78f347ad70ff8e324bd39a9318e3a94a788dc53f1516f/
+    # publish tx_state -> https://blockstream.info/testnet/tx/229caba8498d320c60b78f347ad70ff8e324bd39a9318e3a94a788dc53f1516f/
     tx_state_id = '229caba8498d320c60b78f347ad70ff8e324bd39a9318e3a94a788dc53f1516f'
 
-    tx_er_for_refund_input = TxInput(tx_er_id, 0)
-    tx_ep_for_refund_input = TxInput(tx_ep_id, 0)
-    tx_state_lock_input = TxInput(tx_state_id, 0)
+    tx_er_for_refund_input = TxInput(tx_er_id, 0, sequence=Sequence(TYPE_RELATIVE_TIMELOCK, tx_er_rel_timelock).for_input_sequence())
+    tx_ep_for_refund_input = TxInput(tx_ep_id, 0, sequence=Sequence(TYPE_RELATIVE_TIMELOCK, tx_ep_rel_timelock).for_input_sequence())
+    tx_state_lock_input = TxInput(tx_state_id, 0, sequence=Sequence(TYPE_RELATIVE_TIMELOCK, delta).for_input_sequence())
 
     id_refund_receiver = Id('e2bd3bf28c7e0994ef87a8d61b67f4f926ab2e315bc9f1e55da2394a594b4e66')    # new address for refund
     id_pay_receiver = Id('9d2b4722df4e870ef4fd6a7be03b39c9a056bf0562852018e0c995cbc0d5756c')       # new address for pay to right
     id_inst_pay_receiver = Id('6f76abd9416387f1e34e66a8fa3f13c73a601617e6851ccc6200cca7957443c3')  # new address for inst pay to right
 
     tx_refund, sig_left = createTxRefund(tx_er_for_refund_input, tx_state_lock_input, id_er_u1, id_refund_mulsig_left,
-                                 state_lock_script, id_refund_receiver, lock_amount, to_satoshis(0.00000400), eps)
+                                 state_lock_script, id_refund_receiver, lock_amount, to_satoshis(0.00000600), eps, tx_er_rel_timelock)
 
     sig_right = txRefundGetRightSignature(tx_refund, id_refund_mulsig_right, state_lock_script)
     tx_refund = signTxRefundStateInput(tx_refund, sig_left, sig_right)
     print_tx(tx_refund, 'tx refund')
-    # 379 bytes todo: real publish when rellock finish and fix
-    # publish tx_state -> https://live.blockcypher.com/btc-testnet/tx/229caba8498d320c60b78f347ad70ff8e324bd39a9318e3a94a788dc53f1516f/
-    tx_state_id = '229caba8498d320c60b78f347ad70ff8e324bd39a9318e3a94a788dc53f1516f'
+    # 379 bytes 
+    # publish tx_state -> https://blockstream.info/testnet/tx/98c5369111480b3fbac3e4ab1fd9d05f8dcdb19d20562aff21c3602f34be5882
+    tx_refund_id = '98c5369111480b3fbac3e4ab1fd9d05f8dcdb19d20562aff21c3602f34be5882'
 
     tx_pay = createTxPayAndSign(tx_state_lock_input, id_pay_right, state_lock_script, id_pay_receiver,
-                                lock_amount, to_satoshis(0.00000400))
+                                lock_amount, to_satoshis(0.00000600))
     print_tx(tx_pay, 'tx pay')
-    # 198 bytes
+    # 197 bytes
 
     tx_inst_pay, sig_state_left = createTxInstPay(tx_ep_for_refund_input, tx_state_lock_input, id_pay_mulsig_left, state_lock_script,
-                                  id_inst_pay_receiver, lock_amount, to_satoshis(0.00000400), eps)
-    tx_inst_pay = signTxInstPayStateInput(tx_inst_pay, sig_state_left, id_ep_u1, id_pay_mulsig_right, state_lock_script)
+                                  id_inst_pay_receiver, lock_amount, to_satoshis(0.00000600), eps)
+    tx_inst_pay = signTxInstPayStateInput(tx_inst_pay, sig_state_left, id_ep_u1, id_pay_mulsig_right, state_lock_script, tx_ep_rel_timelock)
     print_tx(tx_inst_pay, 'tx inst pay')
-    # 382 bytes
+    # 380 bytes
 
 
 def split_funds():
@@ -145,9 +145,27 @@ def split_funds():
     print_tx(tx)
 
 
+def test_rel_lock():
+    setup.setup('testnet')
+    id_ep_u3 = Id('d869d0308b94a12c6831576d7c55231a59cdace9a46b2ea32d83a035dbb9b4fb')
+    id_ep_rcv = Id('2dcd22336e478779c8b5e8788c52ee359d5de5d3ef0cc33eb669e6e616bfa91d')
+
+    sequence = Sequence(TYPE_RELATIVE_TIMELOCK, 35).for_input_sequence()
+    tx_input = TxInput('19c04e7bb09cbbd6f18ed4bff18a6c0d7491ddf5119ff1e70b2cfdbc4455612c', 1, sequence=sequence)
+    tx_output = TxOutput(8, id_ep_rcv.p2pkh)
+
+    tx = Transaction([tx_input], [tx_output])
+
+    ep_in_lock_script = getEnableTxOutputLockScript(id_ep_u3.public_key, 35)
+    sig_ep = id_ep_u3.private_key.sign_input(tx, 0, ep_in_lock_script)
+    tx.inputs[0].script_sig = Script([sig_ep, id_ep_u3.public_key.to_hex()])
+    print_tx(tx)
+
+
 if __name__ == '__main__':
     # print(wif_to_private_key('cVBTEB2s94WftLPmCvH7iJoEcCZBEZthNnADJGUwQtGfMNGBEAyC'))
     main()
-    split_funds()
+    # split_funds()
+
 
 

@@ -1,5 +1,6 @@
+from bitcoinutils.constants import TYPE_RELATIVE_TIMELOCK
 from bitcoinutils.keys import P2pkhAddress, PublicKey
-from bitcoinutils.transactions import Transaction, TxInput, TxOutput
+from bitcoinutils.transactions import Transaction, TxInput, TxOutput, Sequence
 from bitcoinutils.script import Script
 from helper import Id
 from typing import List
@@ -10,9 +11,9 @@ def getTxStateLockScript(T: int, delta: int, pubkey_pay_right: PublicKey,
                   pubkey_pay_mulsig_left: PublicKey, pubkey_pay_mulsig_right: PublicKey) -> Script:
 
     # signature script:
-    # - for payment (time() >= T): "<signature_right> <pubkey_right>"
-    # - for refund (with enable-refund tx + 2∆): "<left_signature> <right_signature> <empty> <empty>"
-    # - for instantaneous payment (with enable-payment tx): "<left_signature> <right_signature> <empty> <empty> <empty> <empty>"
+    # - for refund (with enable-refund tx + 2∆): "OP_0 <left_signature> <right_signature>"
+    # - for payment (time() >= T): "<signature_right> <pubkey_right> OP_0 OP_0 OP_0"
+    # - for instantaneous payment (with enable-payment tx): "OP_0 <left_signature> <right_signature> OP_0 OP_0 OP_0 OP_0 OP_0 OP_0"
     lock_script = Script([
         'OP_2', pubkey_refund_mulsig_left.to_hex(), pubkey_refund_mulsig_right.to_hex(), 'OP_2', 'OP_CHECKMULTISIG',
         'OP_IF',
@@ -60,7 +61,8 @@ def createTxInForEnableTx(tx_in: TxInput, id_sender: Id, id_receiver: Id, amount
 
 
 def getEnableTxOutputLockScript(pubkey: PublicKey, rel_timelock: int) -> Script:
-    return Script([rel_timelock, 'OP_CHECKSEQUENCEVERIFY', 'OP_DROP', 'OP_DUP', 'OP_HASH160', pubkey.to_hash160(), 'OP_EQUALVERIFY', 'OP_CHECKSIG'])
+    seq = Sequence(TYPE_RELATIVE_TIMELOCK, rel_timelock)
+    return Script([seq.for_script(), 'OP_CHECKSEQUENCEVERIFY', 'OP_DROP', 'OP_DUP', 'OP_HASH160', pubkey.to_hash160(), 'OP_EQUALVERIFY', 'OP_CHECKSIG'])
 
 
 # enable-refund and enable-payment transactions are constructed in the same way.
@@ -76,20 +78,21 @@ def createEnableTx(tx_in: TxInput, public_keys: List[PublicKey], rel_timelock, e
 
 # before the payment, users share unsigned version of enable-(payment/refund) transaction.
 # if user wants to publish it then he signs it
-def signEnableTx(tx_er: Transaction, tx_in_owner: Id) -> Transaction:
-    sig_sender = tx_in_owner.private_key.sign_input(tx_er, 0, tx_in_owner.p2pkh)
-    tx_er.inputs[0].script_sig = Script([sig_sender, tx_in_owner.public_key.to_hex()])
-    return tx_er
+def signEnableTx(tx_enable: Transaction, tx_in_owner: Id) -> Transaction:
+    sig_sender = tx_in_owner.private_key.sign_input(tx_enable, 0, tx_in_owner.p2pkh)
+    tx_enable.inputs[0].script_sig = Script([sig_sender, tx_in_owner.public_key.to_hex()])
+    return tx_enable
 
 
 # left creates tx_refund based on tx_state and tx_er, and signs it
 def createTxRefund(tx_er_input: TxInput, tx_state_input: TxInput, id_er: Id, id_state_ref_left: Id, tx_state_lock_script: Script,
-                   id_refund: Id, lock_coins: float, fee: float, eps: float = 1) -> (Transaction, str):
+                   id_refund: Id, lock_coins: float, fee: float, eps: float, rel_lock: int) -> (Transaction, str):
     out_refund = TxOutput(lock_coins + eps - fee, id_refund.p2pkh)
 
     tx_refund = Transaction([tx_er_input, tx_state_input], [out_refund])
 
-    sig_er_in = id_er.private_key.sign_input(tx_refund, 0, id_er.p2pkh)
+    er_in_lock_script = getEnableTxOutputLockScript(id_er.public_key, rel_lock)
+    sig_er_in = id_er.private_key.sign_input(tx_refund, 0, er_in_lock_script)
     tx_er_input.script_sig = Script([sig_er_in, id_er.public_key.to_hex()])
 
     # should be also signed by right for 2/2 multisig
@@ -112,7 +115,7 @@ def signTxRefundStateInput(tx_refund: Transaction, sig_left: str, sig_right: str
 
 # left creates tx_inst_pay and signature for tx_state which funds this tx_inst_pay
 def createTxInstPay(tx_ep_input: TxInput, tx_state_input: TxInput, id_state_inst_pay_left: Id, tx_state_lock_script: Script,
-                    id_inst_pay: Id, lock_coins: float, fee: float, eps: float = 1) -> (Transaction, str):
+                    id_inst_pay: Id, lock_coins: float, fee: float, eps: float) -> (Transaction, str):
     out_inst_pay = TxOutput(lock_coins + eps - fee, id_inst_pay.p2pkh)
 
     tx_inst_pay = Transaction([tx_ep_input, tx_state_input], [out_inst_pay])
@@ -126,9 +129,10 @@ def createTxInstPay(tx_ep_input: TxInput, tx_state_input: TxInput, id_state_inst
 # left sends unsigned tx_inst_pay to right along with his signature for tx_state. 
 # Now right can completely sign it and publish
 def signTxInstPayStateInput(tx_inst_pay: Transaction, sig_tx_state_left: str, id_ep_owner: Id,
-                            id_state_inst_pay_right: Id, tx_state_lock_script: Script) -> Transaction:
+                            id_state_inst_pay_right: Id, tx_state_lock_script: Script, rel_lock: int) -> Transaction:
 
-    sig_ep = id_ep_owner.private_key.sign_input(tx_inst_pay, 0, id_ep_owner.p2pkh)
+    ep_in_lock_script = getEnableTxOutputLockScript(id_ep_owner.public_key, rel_lock)
+    sig_ep = id_ep_owner.private_key.sign_input(tx_inst_pay, 0, ep_in_lock_script)
     sig_tx_state_right = id_state_inst_pay_right.private_key.sign_input(tx_inst_pay, 1, tx_state_lock_script)
 
     tx_inst_pay.inputs[0].script_sig = Script([sig_ep, id_ep_owner.public_key.to_hex()])
