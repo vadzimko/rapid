@@ -23,7 +23,7 @@ def getTxStateLockScript(T: int, delta: int, pubkey_pay_right: PublicKey,
     """
 
     # signature script:
-    # - for refund (with enable-refund tx + 2∆): "OP_0 <left_signature> <right_signature>"
+    # - for refund (with enable-refund tx + ∆): "OP_0 <left_signature> <right_signature>"
     # - for instantaneous payment (with enable-payment tx): "OP_0 <left_signature> <right_signature> OP_0 OP_0 OP_0"
     # - for payment (time() >= T): "<signature_right> <pubkey_right> OP_0 OP_0 OP_0 OP_0 OP_0 OP_0"
     lock_script = Script([
