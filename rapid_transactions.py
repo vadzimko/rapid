@@ -24,12 +24,12 @@ def getTxStateLockScript(T: int, delta: int, pubkey_pay_right: PublicKey,
 
     # signature script:
     # - for refund (with enable-refund tx + 2∆): "OP_0 <left_signature> <right_signature>"
-    # - for payment (time() >= T): "<signature_right> <pubkey_right> OP_0 OP_0 OP_0"
-    # - for instantaneous payment (with enable-payment tx): "OP_0 <left_signature> <right_signature> OP_0 OP_0 OP_0 OP_0 OP_0 OP_0"
+    # - for instantaneous payment (with enable-payment tx): "OP_0 <left_signature> <right_signature> OP_0 OP_0 OP_0"
+    # - for payment (time() >= T): "<signature_right> <pubkey_right> OP_0 OP_0 OP_0 OP_0 OP_0 OP_0"
     lock_script = Script([
         'OP_2', pubkey_refund_mulsig_left.to_hex(), pubkey_refund_mulsig_right.to_hex(), 'OP_2', 'OP_CHECKMULTISIG',
         'OP_IF',
-            delta, 'OP_CHECKSEQUENCEVERIFY', 'OP_DROP', 'OP_TRUE',  # check if refund and lock for 2∆
+            delta, 'OP_CHECKSEQUENCEVERIFY', 'OP_DROP', 'OP_TRUE',  # check if refund and lock for ∆
         'OP_ELSE',
             'OP_2', pubkey_pay_mulsig_left.to_hex(), pubkey_pay_mulsig_right.to_hex(), 'OP_2', 'OP_CHECKMULTISIG', # check if inst payment
             'OP_IF',
